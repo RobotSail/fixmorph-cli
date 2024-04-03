@@ -1,0 +1,102 @@
+# this dockerfile assumes that working directory
+# is the bind source directory
+FROM quay.io/cve-gen-ai/et-fixmorph:from-oleg-computer as fixmorph
+
+
+FROM fedora:40 as builder
+
+USER root
+
+COPY --from=fixmorph /opt/fixmorph /FixMorph
+WORKDIR /FixMorph
+# WORKDIR /bind
+
+RUN dnf update -y
+RUN dnf install -y git autoconf automake libtool make \
+  readline-devel texinfo net-snmp-devel groff pkgconfig json-c-devel \
+  pam-devel python3-pytest bison flex c-ares-devel python3-devel \
+  python3-sphinx perl-core patch libcap-devel \
+  elfutils-libelf-devel libunwind-devel protobuf-c-devel \
+  pcre2-devel cmake openssl-devel openssl openssl-libs
+
+# installing libyang
+RUN git clone https://github.com/CESNET/libyang.git
+WORKDIR /FixMorph/libyang
+RUN git checkout v2.1.128
+RUN mkdir build
+WORKDIR /FixMorph/libyang/build
+RUN cmake -D CMAKE_INSTALL_PREFIX:PATH=/usr \
+      -D CMAKE_BUILD_TYPE:String="Release" ..
+RUN make
+RUN make install
+
+# run this down here so we dont have to recompile libyang
+RUN dnf install -y python3.11
+RUN python3.11 -m ensurepip
+
+WORKDIR /FixMorph
+
+RUN python3.11 -m pip install -r requirements.txt
+
+
+# enable vim keybinds
+ENV VISUAL='vim'
+RUN echo "set -o vi" >> /root/.bashrc
+RUN echo "export VISUAL=vim" >> /root/.bashrc
+
+# enable settings within vim
+RUN echo "set number" >> /root/.vimrc
+RUN echo "set relativenumber" >> /root/.vimrc
+
+
+ARG PKG_NAME='frr'
+ARG GIT_EMAIL='user@example.com'
+ARG GIT_NAME='user'
+
+RUN git config --global user.email "${GIT_EMAIL}"
+RUN git config --global user.name "${GIT_NAME}"
+
+
+ENV SRC_PATH_A="/dirs/${PKG_NAME}-a"
+ENV SRC_PATH_B="/dirs/${PKG_NAME}-b"
+ENV SRC_PATH_C="/dirs/${PKG_NAME}-c"
+
+# these commands do nothing
+ARG CONFIG_COMMAND_A="echo 'hello world'"
+ARG CONFIG_COMMAND_B="echo 'hello world'"
+ARG CONFIG_COMMAND_C="echo 'hello world'"
+
+ARG BUILD_COMMAND_A="make -j"
+ARG BUILD_COMMAND_C="make -j"
+ARG BUILD_COMMAND_B="make -j"
+
+# copy over the upstream
+COPY upstream "${SRC_PATH_A}"
+COPY upstream "${SRC_PATH_B}"
+COPY downstream "${SRC_PATH_C}"
+
+# move over the patches and apply them to the relevant directories
+COPY upstream.patch "${SRC_PATH_B}/upstream.patch"
+
+# apply the contents of the patches
+RUN git -C "${SRC_PATH_B}" apply upstream.patch
+RUN git -C "${SRC_PATH_B}" add . 
+RUN git -C "${SRC_PATH_B}" commit -m "applied upstream.patch"
+
+
+# create a repair.conf file
+RUN printf 'path_a:%s\npath_b:%s\npath_c:%s\nconfig_command_a:%s\nconfig_command_b:%s\nconfig_command_c:%s\nbuild_command_a:%s\nbuild_command_b:%s\nbuild_command_c:%s\n' \
+    "${SRC_PATH_A}" \
+    "${SRC_PATH_B}" \
+    "${SRC_PATH_C}" \
+    "${CONFIG_COMMAND_A}" \
+    "${CONFIG_COMMAND_B}" \
+    "${CONFIG_COMMAND_C}" \
+    "${BUILD_COMMAND_A}" \
+    "${BUILD_COMMAND_B}" \
+    "${BUILD_COMMAND_C}" > /FixMorph/repair.conf
+
+COPY run-demo.sh ./cmd
+RUN chmod +x ./cmd
+
+CMD [ "./cmd" ]

@@ -1,0 +1,87 @@
+# this dockerfile assumes that working directory
+# is the bind source directory
+FROM fixmorph:local as fixmorph
+
+USER root
+
+RUN apt update
+
+# WORKDIR /bind
+
+
+RUN DEBIAN_FRONTEND=noninteractive apt install -y make gcc g++ git  \
+    pkg-config \
+    # libuv1-dev \
+    libcap-dev \
+    build-essential \
+    libncurses-dev \
+    libncursesw5-dev \
+    vim
+
+# enable vim keybinds
+ENV VISUAL='vim'
+RUN echo "set -o vi" >> /root/.bashrc
+RUN echo "export VISUAL=vim" >> /root/.bashrc
+
+# enable settings within vim
+RUN echo "set number" >> /root/.vimrc
+RUN echo "set relativenumber" >> /root/.vimrc
+
+
+ARG PKG_NAME='iotop-c'
+ARG GIT_EMAIL='user@example.com'
+ARG GIT_NAME='user'
+
+RUN git config --global user.email "${GIT_EMAIL}"
+RUN git config --global user.name "${GIT_NAME}"
+
+WORKDIR /opt/fixmorph
+
+ENV SRC_PATH_A="/dirs/${PKG_NAME}-a"
+ENV SRC_PATH_B="/dirs/${PKG_NAME}-b"
+ENV SRC_PATH_C="/dirs/${PKG_NAME}-c"
+
+# these commands do nothing
+ARG CONFIG_COMMAND_A="echo 'hello world'"
+ARG CONFIG_COMMAND_B="echo 'hello world'"
+ARG CONFIG_COMMAND_C="echo 'hello world'"
+
+ARG BUILD_COMMAND_A="make -j"
+ARG BUILD_COMMAND_C="make -j"
+ARG BUILD_COMMAND_B="make -j"
+
+# copy over the upstream
+COPY ./upstreams/iotop "${SRC_PATH_A}"
+COPY ./upstreams/iotop "${SRC_PATH_B}"
+COPY ./rpms/iotop-c/iotop-1.25 "${SRC_PATH_C}"
+
+# move over the patches and apply them to the relevant directories
+COPY ./iotop-c-2.patch "${SRC_PATH_B}/iotop-c-b.patch"
+COPY ./iotop-c-backport.patch "${SRC_PATH_C}/iotop-c-c.patch"
+
+# apply the contents of the patches
+RUN git -C "${SRC_PATH_B}" apply -v iotop-c-b.patch
+RUN git -C "${SRC_PATH_B}" add . 
+RUN git -C "${SRC_PATH_B}" commit -m "applied iotop-c-b.patch"
+
+RUN git -C "${SRC_PATH_C}" apply -v iotop-c-c.patch
+RUN git -C "${SRC_PATH_C}" add . 
+RUN git -C "${SRC_PATH_C}" commit -m "applied iotop-c-c.patch"
+
+
+# create a repair.conf file
+RUN printf 'path_a:%s\npath_b:%s\npath_c:%s\nconfig_command_a:%s\nconfig_command_b:%s\nconfig_command_c:%s\nbuild_command_a:%s\nbuild_command_b:%s\nbuild_command_c:%s\n' \
+    "${SRC_PATH_A}" \
+    "${SRC_PATH_B}" \
+    "${SRC_PATH_C}" \
+    "${CONFIG_COMMAND_A}" \
+    "${CONFIG_COMMAND_B}" \
+    "${CONFIG_COMMAND_C}" \
+    "${BUILD_COMMAND_A}" \
+    "${BUILD_COMMAND_B}" \
+    "${BUILD_COMMAND_C}" > /opt/fixmorph/repair.conf
+
+COPY run.sh ./cmd
+RUN chmod +x ./cmd
+
+CMD [ "./cmd" ]

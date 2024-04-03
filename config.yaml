@@ -1,0 +1,3 @@
+distgit_repo: rpms/frr
+fixmorph_base_image: quay.io/cve-gen-ai/et-fixmorph:latest
+upstream_url: https://github.com/FRRouting/frr.git

@@ -1,3 +1,7 @@
+debug
+frr
+frr-9.1
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
