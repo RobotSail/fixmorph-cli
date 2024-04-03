@@ -274,8 +274,8 @@ def create(ctx, commit_id: str, branch_name: str):
     conf = config_module.read_config(configfile)
 
     # temp_dir = "./temp"
-    with tempfile.TemporaryDirectory() as _:
-        temp_dir = '/home/osilkin/Programming/fixmorph-cli/debug'
+    with tempfile.TemporaryDirectory() as temp_dir:
+        # temp_dir = '/home/osilkin/Programming/fixmorph-cli/debug'
         # get the working directory
         pwd_proc = subprocess.run(["pwd"], capture_output=True, cwd="/home/osilkin")
         click.secho(pwd_proc.stdout.decode("utf-8"))
@@ -287,10 +287,10 @@ def create(ctx, commit_id: str, branch_name: str):
         upstream_clone_proc = subprocess.run(
             ["git", "clone", conf.upstream_url, upstream_path],
             capture_output=True,
-            check=True,
             cwd=temp_dir,
         )
-        upstream_clone_proc.check_returncode()
+        if upstream_clone_proc.returncode != 0:
+            print(upstream_clone_proc.stderr)
 
         # get the patch we want to backport from the upstream
         checkout_proc = subprocess.run(
@@ -396,6 +396,26 @@ def create(ctx, commit_id: str, branch_name: str):
             capture_output=True,
             cwd=downstream_path,
         )
+
+
+        # prepare the downstream source
+        click.secho("prepping the downstream source", fg="green")
+        prep_proc = subprocess.run(
+            ["rhpkg", "prep"], cwd=downstream_path, capture_output=True
+        )
+        if prep_proc.returncode != 0:
+            click.secho(f"Error preparing the downstream source", fg="red")
+            if prep_proc.stderr:
+                click.secho(
+                    f"Error preparing the downstream source: {prep_proc.stderr}",
+                    fg="red",
+                )
+            if prep_proc.stdout:
+                click.secho(
+                    f"Error preparing the downstream source: {prep_proc.stdout}",
+                    fg="red",
+                )
+    
         if extract_tarball_proc.returncode != 0:
             click.secho(f"could not extract tarball {tarball_path}", color="red")
             raise RuntimeError(
@@ -544,7 +564,10 @@ def create(ctx, commit_id: str, branch_name: str):
             rc = proc.poll()
 
             if rc != 0:
-                print(f"Error building the Docker image:\n{proc.stderr.read()}")
+                if proc.stderr:
+                    print(f"Error building the Docker image:\n{proc.stderr.read()}")
+                if proc.stdout:
+                    print(f"Error building the docker image:\n{proc.stdout.read()}")
                 return
             else:
                 print("Docker image built successfully 🥳")

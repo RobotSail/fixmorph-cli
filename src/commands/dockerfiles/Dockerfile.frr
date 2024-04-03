@@ -31,7 +31,7 @@ RUN make
 RUN make install
 
 # run this down here so we dont have to recompile libyang
-RUN dnf install -y python3.11
+RUN dnf install -y python3.11 bear
 RUN python3.11 -m ensurepip
 
 WORKDIR /FixMorph
@@ -95,6 +95,17 @@ RUN printf 'path_a:%s\npath_b:%s\npath_c:%s\nconfig_command_a:%s\nconfig_command
     "${BUILD_COMMAND_A}" \
     "${BUILD_COMMAND_B}" \
     "${BUILD_COMMAND_C}" > /FixMorph/repair.conf
+
+# bootstrap each directory
+WORKDIR "${SRC_PATH_A}"
+RUN ./bootstrap.sh
+WORKDIR "${SRC_PATH_B}"
+RUN ./bootstrap.sh
+WORKDIR  "${SRC_PATH_C}"
+RUN ./bootstrap.sh
+
+# return back
+WORKDIR /FixMorph
 
 COPY run-demo.sh ./cmd
 RUN chmod +x ./cmd
